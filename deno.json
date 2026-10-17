@@ -1,0 +1,20 @@
+{
+  "nodeModulesDir": "auto",
+  "tasks": {
+    "dev": "deno run --allow-net --allow-env --allow-read --env-file=.env src/server.ts",
+    "typecheck": "deno check src/server.ts supabase/functions/api/index.ts"
+  },
+  "fmt": {
+    "lineWidth": 100,
+    "exclude": ["supabase/functions/**/index.ts"]
+  },
+  "lint": {
+    "rules": {
+      "exclude": [
+        "no-explicit-any",
+        // `npm:` inline keep the Supabase Edge Function bundle hermetic (no node_modules needed at deploy).
+        "no-import-prefix"
+      ]
+    }
+  }
+}

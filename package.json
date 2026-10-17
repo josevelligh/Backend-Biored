@@ -1,0 +1,29 @@
+{
+  "name": "biored-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "BioRed API — motor logístico (Haversine + load balancing), motor físico UCT-3, trueque verde con QR y telemetría municipal para los Bio-Nodos Barriales de Managua.",
+  "scripts": {
+    "dev": "deno run --allow-net --allow-env --allow-read --allow-sys --env-file=.env src/server.ts",
+    "start": "npm run dev",
+    "typecheck": "deno check src/server.ts supabase/functions/api/index.ts",
+    "fmt": "deno fmt",
+    "test": "deno test --allow-net --allow-env --allow-read --env-file=.env",
+    "supabase:login": "supabase login",
+    "supabase:link": "supabase link",
+    "db:push": "supabase db push",
+    "db:reset": "supabase db reset",
+    "db:seed": "supabase db push",
+    "fn:deploy": "supabase functions deploy api",
+    "fn:serve": "supabase functions serve api --env-file .env"
+  },
+  "devDependencies": {
+    "deno": "^2.9.6",
+    "supabase": "^2.121.0"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
+    "zod": "^4.6.7"
+  }
+}

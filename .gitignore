@@ -1,0 +1,8 @@
+node_modules/
+.env
+.env.local
+*.log
+.deno/
+supabase/.temp/
+supabase/.branches/
+.DS_Store
