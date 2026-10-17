@@ -5,4 +5,5 @@ node_modules/
 .deno/
 supabase/.temp/
 supabase/.branches/
+.temp/
 .DS_Store
