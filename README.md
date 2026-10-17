@@ -1,339 +1,202 @@
-# BioRed API 🌿
+# BioRed API & Physical Engine 🌿
 
-Backend del sistema **BioRed · Bio-Nodos Barriales de Managua** (Desafío 04): motor logístico de
-acopio de poda, motor físico de conversión **UCT-3**, trueque verde con vouchers **QR "Rama por
-Planta"**, feed comunitario y telemetría municipal.
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg?logo=typescript)](https://www.typescriptlang.org/)
+[![Deno](https://img.shields.io/badge/Deno-v2.x-black.svg?logo=deno)](https://deno.land/)
+[![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-green.svg?logo=supabase)](https://supabase.com/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-Un solo código TS/Deno corre **en dos lugares**:
+Backend y motor físico-logístico para **BioRed · Red Barrial de Bio-Nodos Urbanos de Managua**, desarrollado en el marco del **Rally Latinoamericano de Innovación 2026 (Desafío 04 - Valorización de Residuos de Poda Urbana)**.
 
-| Runtime                     | Comando                         | URL                                                 |
-| --------------------------- | ------------------------------- | --------------------------------------------------- |
-| Servidor local (desarrollo) | `npm run dev`                   | `http://<IP-LAN>:3000/api/v1`                       |
-| **Supabase Edge Function**  | `supabase functions deploy api` | `https://<ref>.supabase.co/functions/v1/api/api/v1` |
+El sistema resuelve la logística inversa y valorización in situ de poda urbana, sustituyendo la quema a cielo abierto y el transporte costoso hacia el vertedero municipal La Chureca por una red descentralizada de microestaciones de triturado y trueque circular.
 
 ---
 
-## Características
-
-- 🚚 **Enrutamiento inverso Haversine** con _load balancing_: elige el Bio-Nodo que menos castiga la
-  red y calcula el diésel ahorrado frente a llevar la rama al vertedero La Chureca.
-- ⚙️ **Motor físico UCT-3** (cilindro Trommel tricapa): a partir de `toneladas` y `humedad` calcula
-  mulch térmico, compost fino, fibra para Bio-Macetas, desgaste de cuchillas 5160 y valor comercial
-  del lote.
-- 🎫 **Vouchers QR "Rama por Planta"**: el vecino registra poda → se emite un vale firmado; el
-  operario lo escanea → se acreditan Eco-Puntos y sube la tolva del nodo.
-- 🛒 **Trueque verde**: canje de Eco-Puntos por abono, mulch, Bio-Macetas y madero negro.
-- 📣 **Feed comunitario** y **Retos Barriales**.
-- 📊 **Telemetría municipal**: toneladas desviadas, camiones ahorrados, ROI/CAPEX, reducción de
-  temperatura del suelo y ahorro de agua.
-- 🧪 **Doble repositorio**: `PostgresRepo` (producción, Supabase) y `MemoryRepo` (demo sin
-  credenciales).
-
----
-
-## Arquitectura
+## 🚀 Arquitectura General
 
 ```
-┌────────────────────┐   HTTP/JSON    ┌──────────────────────────────┐
-│  App Expo (RallyApp)│ ─────────────▶ │  BioRed API                  │
-│  src/services/*.ts  │                │  ┌────────────────────────┐  │
-└────────────────────┘                │  │ routes → controllers    │  │
-                                      │  │ services (UCT-3, routing)│ │
-                                      │  │ repo (port)             │  │
-                                      │  └───────┬────────┬────────┘  │
-                                      │          │        │           │
-                                      │   MemoryRepo   PostgresRepo   │
-                                      │  (seed en RAM)    │ (supabase-js)
-                                      └───────────────────┼───────────┘
-                                                          │ PostgREST + RPC
-                                                    ┌─────▼─────┐
-                                                    │ Supabase  │
-                                                    │ Postgres  │
-                                                    └───────────┘
+┌─────────────────────────────────┐
+│     RallyApp (Mobile Expo)      │
+│     iOS & Android (SDK 57)      │
+└───────────────┬─────────────────┘
+                │
+                │ HTTPS / PostgREST & RPC
+                ▼
+┌────────────────────────────────────────────────────────┐
+│               BioRed API Service Layer                 │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ ⚙️ Motor Físico UCT-3 (Trommel Tricapa)          │  │
+│  │ 🚚 Enrutador Haversine + Carga Adaptativa        │  │
+│  │ 🎟️ Emisión & Liquidación Criptográfica de QR     │  │
+│  │ 📊 Telemetría Municipal & Ahorro de Emisiones    │  │
+│  └──────────────────────────────────────────────────┘  │
+│         │                                     │        │
+│   (Modo Cloud)                           (Modo Local)  │
+│         ▼                                     ▼        │
+│  ┌───────────────┐                     ┌─────────────┐ │
+│  │ PostgresRepo  │                     │ MemoryRepo  │ │
+│  └───────┬───────┘                     └─────────────┘ │
+└──────────┼─────────────────────────────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────┐
+│       Supabase Database         │
+│  • Tablas Relacionales          │
+│  • Funciones RPC Transaccionales│
+│  • Índices Geoespaciales        │
+│  • Row-Level Security (RLS)     │
+└─────────────────────────────────┘
 ```
-
-- **Sin Prisma/SQLite**: la persistencia es Postgres de Supabase. Las operaciones que tocan varias
-  tablas son **funciones RPC atómicas** (`biored_verify_ticket`, `biored_redeem_item`,
-  `biored_apply_batch`) para no dejar estados intermedios.
-- **Backend único**: todo el dominio vive en `supabase/functions/_shared/`. El bundler de Supabase
-  Edge sólo garantiza imports dentro de `supabase/functions/`, por eso `src/` contiene únicamente el
-  servidor local y el cliente de la app.
-- **Modo automático**: si no hay credenciales de Supabase, arranca con los datos semilla en memoria
-  (demo instantánea). Si hay credenciales, usa Postgres.
 
 ---
 
-## Inicio rápido (modo demo, sin credenciales)
+## 💡 Características Principales
 
+### 1. ⚙️ Motor Físico UCT-3 (Cilindro Trommel Tricapa)
+Ubicado en `supabase/functions/_shared/services/uct3.service.ts`:
+* Modela el procesamiento de biomasa leñosa según la **humedad relativa ambiental de Managua (base 30%)**.
+* Clasifica el triturado en tres fracciones mediante cribado rotativo:
+  * **Fracción Gruesa (> 25 mm):** Mulch térmico de aplicación inmediata para retención de humedad.
+  * **Fracción Fina (< 8 mm):** Materia prima para compostaje acelerado barrial (ciclo de 28 días).
+  * **Fracción Media (8 a 25 mm):** Fibra vegetal aglutinable para prensado de **Bio-Macetas biodegradables** (rendimiento: 210 macetas por tonelada).
+* Monitorea el desgaste acumulado de las **cuchillas de acero 5160** con alerta de mantenimiento a las 40 horas efectivas de rotación.
+* Calcula la valorización económica en USD del lote procesado ($45/t mulch, $120/t compost, $0.90/ud bio-maceta).
+
+### 2. 🚚 Enrutamiento Inverso Haversine con Balanceo de Carga
+Ubicado en `supabase/functions/_shared/services/routing.service.ts`:
+* Calcula la distancia ortodrómica (*great-circle*) desde la ubicación del ciudadano o cuadrilla hacia todos los Bio-Nodos activos.
+* Asigna un puntaje dinámico de saturación:
+  $$\text{Score} = \text{Distancia (km)} \times \left(1 + \frac{\text{Carga Tolva (\%)}}{100}\right)$$
+* Evita el colapso de nodos congestionados y redirige de forma balanceada.
+* Calcula el **diésel ahorrado** frente al trayecto habitual hacia el vertedero La Chureca (rendimiento estimado de camión recolector: 3.5 km/L a $1.32 USD/L).
+
+### 3. 🎟️ Vouchers QR "Rama por Planta" con Transaccionalidad Atómica
+* El vecino registra el volumen aproximado de ramas y genera un vale digital firmado criptográficamente con hash SHA-256.
+* En el Bio-Nodo, el operario escanea el código QR desde la app.
+* La liquidación se ejecuta mediante la función almacenada **`biored_verify_ticket`** en PostgreSQL:
+  * Acredita los Bio-Puntos de forma inmediata en la billetera del vecino.
+  * Incrementa la tolva y las métricas de recepción del nodo.
+  * Invalida el vale para prevenir doble canje (*double-spending*).
+
+### 4. 🛒 Trueque Verde & Economía Circular
+* Los puntos acumulados se canjean por compost madurado, biofertilizantes foliares, plantines nativos (Madroño, Sacuanjoche, Madero Negro) y bio-macetas.
+* La función RPC **`biored_redeem_item`** descuenta el inventario y los puntos del usuario en una sola transacción atómica segura.
+
+---
+
+## 🗄️ Esquema de Base de Datos (PostgreSQL en Supabase)
+
+### Tablas Principales
+
+| Tabla | Descripción |
+| :--- | :--- |
+| **`bio_nodes`** | 8 microestaciones georreferenciadas en Managua con capacidad, estado de tolva, horas de cuchilla y operador a cargo. |
+| **`users`** | Perfiles ciudadanos, cuadrillas barriales, operarios municipales y administradores comunales. |
+| **`community_posts`** | Feed social con evidencias fotográficas, kilos aportados, retos barriales y métricas de interacción. |
+| **`nursery_items`** | Catálogo del trueque de insumos biológicos disponibles por nodo. |
+| **`pruning_tickets`** | Vales QR generados para entrega de biomasa y trazabilidad de pesaje. |
+| **`bio_batches`** | Registro histórico de lotes triturados por la máquina UCT-3 y subproductos obtenidos. |
+| **`redemptions`** | Registro de canjes realizados por vecinos en los viveros comunitarios. |
+
+### Funciones Almacenadas (RPC)
+
+* `biored_verify_ticket(p_ticket_id, p_operator_id)`: Valida el QR, añade la carga a la tolva del nodo y acredita puntos al vecino.
+* `biored_redeem_item(p_user_id, p_item_id)`: Verifica saldo y stock, descuenta puntos y genera el recibo de entrega.
+* `biored_apply_batch(...)`: Registra el triturado industrial, incrementa stock de mulch/compost y suma horas a las cuchillas.
+
+---
+
+## 📡 Endpoints del API (`/api/v1`)
+
+| Método | Endpoint | Descripción |
+| :---: | :--- | :--- |
+| `GET` | `/health` | Chequeo de salud del servicio y modo de persistencia (`postgres` o `memory`). |
+| `GET` | `/nodes` | Lista de todos los Bio-Nodos, coordenadas y estado en vivo. |
+| `POST`| `/nodes/recommend` | Algoritmo de recomendación y enrutamiento óptimo de entrega. |
+| `GET` | `/nodes/:id` | Detalle específico de un Bio-Nodo y sus métricas de tolva. |
+| `POST`| `/nodes/:id/process-batch`| Registro de molienda UCT-3 y actualización de derivados. |
+| `GET` | `/pruning/tickets` | Consulta de vales de poda por usuario (`?userId=...`). |
+| `POST`| `/pruning/tickets` | Generación y emisión de nuevo vale QR digital. |
+| `POST`| `/pruning/verify-qr` | Escaneo y liquidación del vale en campo por el operario. |
+| `GET` | `/marketplace/items` | Catálogo de insumos en viveros para canje con puntos. |
+| `POST`| `/marketplace/redeem` | Ejecución de canje de insumos ecológicos. |
+| `GET` | `/community/feed` | Publicaciones ciudadanas y retos de biomasa activos. |
+| `POST`| `/community/posts` | Nueva publicación comunitaria con evidencia fotográfica. |
+| `GET` | `/telemetry/summary` | Dashboard municipal de toneladas desviadas, ahorro de agua y diésel. |
+
+---
+
+## 🛠️ Instalación y Desarrollo Local
+
+### Requisitos
+* [Node.js](https://nodejs.org/) v18+ o [Deno](https://deno.land/) v2+
+* [Supabase CLI](https://supabase.com/docs/guides/cli) (opcional para desarrollo local con Docker)
+
+### 1. Clonar el repositorio
+```bash
+git clone git@github.com:josevelligh/Backend-Biored.git
+cd Backend-Biored
+```
+
+### 2. Instalar dependencias
 ```bash
 npm install
-npm run dev
-# → http://localhost:3000/api/v1/health  { "mode": "memory", ... }
 ```
 
-No requiere Supabase: el servidor levanta con los datos semilla de Managua en RAM y todos los
-endpoints funcionan. Ideal para el pitch o para desarrollar la app.
-
-Prueba rápida:
-
+### 3. Configuración de Variables de Entorno
+Crea un archivo `.env` basado en el ejemplo:
 ```bash
-curl http://localhost:3000/api/v1/nodes
-curl -X POST http://localhost:3000/api/v1/nodes/recommend \
-  -H 'content-type: application/json' \
-  -d '{"latitude":12.136,"longitude":-86.271,"volumeM3":0.8}'
+cp .env.example .env
 ```
 
----
-
-## Desplegar en Supabase
-
-### 1. Login y enlace del proyecto
-
-```bash
-npx supabase login
-npx supabase link --project-ref <TU_PROJECT_REF>
-```
-
-### 2. Crear el esquema y los datos semilla
-
-```bash
-npx supabase db push
-```
-
-Aplica, en orden, todo `supabase/migrations/`:
-
-| Migración                   | Contenido                                                          |
-| --------------------------- | ------------------------------------------------------------------ |
-| `20261016000001_init.sql`   | Tablas, constraints, índices y vista `biored_network_overview`.    |
-| `20261016000002_rpc.sql`    | RPCs atómicas + RLS + permisos de funciones.                       |
-| `20261016000003_seed.sql`   | Datos semilla de Managua (generado por el motor real).             |
-| `20261016000004_grants.sql` | Grants explícitos y política `*_service_all` para el service role. |
-
-### 3. Desplegar la Edge Function
-
-```bash
-npx supabase functions deploy api
-```
-
-La función se llama `api` y ya viene configurada en `supabase/config.toml` con `verify_jwt = false`
-(modo demo: una sola URL para el APK).
-
-> **Variables de entorno:** Supabase inyecta automáticamente `SUPABASE_URL` y
-> `SUPABASE_SERVICE_ROLE_KEY` en las Edge Functions, así que **no** hay que declararlas como
-> secrets.
-
-### 4. Probar
-
-```bash
-curl https://<TU_PROJECT_REF>.supabase.co/functions/v1/api/api/v1/health
-# → { "status": "ok", "mode": "postgres", "nodesRegistered": 4, ... }
-```
-
----
-
-## Variables de entorno
-
-`.env` (local) / `npm run dev`:
-
+Configuración básica:
 ```env
-SUPABASE_URL=                 # vacío = MODO DEMO (memoria)
-SUPABASE_SERVICE_ROLE_KEY=
+# Modo Memoria (Sin base de datos externa, usa el dataset completo de Managua en RAM):
 PORT=3000
+
+# O Modo Supabase Postgres (Producción / Nube):
+SUPABASE_URL=https://thlizppibkntlrpyhrmn.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=tu_service_role_key_aqui
 ```
 
-| Variable                                     | Efecto                                                    |
-| -------------------------------------------- | --------------------------------------------------------- |
-| `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` | Presentes → modo **Postgres**. Vacías → modo **memoria**. |
-| `PORT`                                       | Puerto del servidor local (default `3000`).               |
-
----
-
-## Endpoints (`/api/v1`)
-
-| Método | Ruta                               | Descripción                                          |
-| ------ | ---------------------------------- | ---------------------------------------------------- |
-| `GET`  | `/`                                | Índice navegable de la API y constantes del dominio. |
-| `GET`  | `/health`                          | Estado, modo de datos y número de nodos.             |
-| `GET`  | `/nodes`                           | Lista de Bio-Nodos + resumen de red.                 |
-| `GET`  | `/nodes/:id`                       | Detalle de un Bio-Nodo.                              |
-| `GET`  | `/nodes/:id/batches`               | Lotes UCT-3 procesados en el nodo.                   |
-| `GET`  | `/nodes/impact/network`            | Impacto agregado de toda la red.                     |
-| `POST` | `/nodes/recommend`                 | Enrutamiento Haversine + load balancing.             |
-| `POST` | `/nodes/:id/process-batch`         | Registra un lote procesado por la UCT-3.             |
-| `GET`  | `/pruning/tickets?userId=`         | Vales de poda (filtrable por vecino).                |
-| `POST` | `/pruning/tickets`                 | Registra poda y emite el vale QR.                    |
-| `POST` | `/pruning/verify-qr`               | Liquida un vale escaneado (operario).                |
-| `GET`  | `/marketplace/items`               | Catálogo del trueque verde.                          |
-| `GET`  | `/marketplace/items/:id`           | Detalle de un insumo.                                |
-| `GET`  | `/marketplace/redemptions?userId=` | Canjes de un vecino.                                 |
-| `POST` | `/marketplace/redeem`              | Canje de Eco-Puntos por un insumo.                   |
-| `GET`  | `/community/feed`                  | Feed de actividades + retos.                         |
-| `GET`  | `/community/posts/:id`             | Detalle de una publicación.                          |
-| `POST` | `/community/posts`                 | Publica una actividad.                               |
-| `POST` | `/community/posts/:id/like`        | Like/dislike.                                        |
-| `POST` | `/community/challenges`            | Abre un Reto Barrial.                                |
-| `GET`  | `/telemetry/summary`               | KPIs municipales + ROI.                              |
-| `GET`  | `/telemetry/districts`             | KPIs por distrito.                                   |
-| `GET`  | `/telemetry/nodes`                 | KPIs por nodo.                                       |
-| `GET`  | `/users`                           | Lista de vecinos.                                    |
-| `GET`  | `/users/:id`                       | Perfil de un vecino.                                 |
-| `GET`  | `/users/:id/wallet`                | Billetera: puntos, vale y canjes.                    |
-
-### Ejemplos
-
+### 4. Iniciar el Servidor de Desarrollo
 ```bash
-# Recomendar nodo
-curl -X POST $API/nodes/recommend -H 'content-type: application/json' \
-  -d '{"latitude":12.136,"longitude":-86.271,"volumeM3":0.8}'
-
-# Registrar poda (emite el vale QR)
-curl -X POST $API/pruning/tickets -H 'content-type: application/json' \
-  -d '{"userId":"user-martha","sizeCategory":"lg"}'
-
-# Liquidar el vale (operario)
-curl -X POST $API/pruning/verify-qr -H 'content-type: application/json' \
-  -d '{"qrCodeHash":"<hash del vale>","operatorId":"user-operador-carmen"}'
-
-# Procesar un lote en la UCT-3
-curl -X POST $API/nodes/node-luis-alfonso/process-batch \
-  -H 'content-type: application/json' \
-  -d '{"tonsProcessed":2.5,"moisturePercent":42,"operatorId":"user-operador-carmen"}'
+npm run dev
 ```
-
-### Errores
-
-Formato uniforme, con código estable para la app:
-
-```json
-{
-  "error": {
-    "code": "TICKET_ALREADY_VERIFIED",
-    "message": "Este vale ya fue liquidado anteriormente."
-  }
-}
-```
-
-| HTTP  | Cuándo                                                                |
-| ----- | --------------------------------------------------------------------- |
-| `404` | Recurso inexistente (`*_NOT_FOUND`).                                  |
-| `409` | Regla de negocio: vale ya liquidado, sin stock, puntos insuficientes. |
-| `422` | Validación (`VALIDATION_ERROR` con `details[]`) o QR inválido.        |
-| `500` | Error inesperado.                                                     |
+El servidor quedará disponible en `http://localhost:3000/api/v1/health`.
 
 ---
 
-## Motores
+## 🧪 Pruebas Rápidas con cURL
 
-### UCT-3 — conversión tricapa (`services/uct3.service.ts`)
-
-```
-deviation = humedad − 30                       (30 % = humedad de referencia)
-grueso    = clamp(0.50 + deviation × 0.004)    (>25 mm → mulch térmico, Día 1)
-fino      = clamp(0.35 − deviation × 0.006)    (<8 mm  → compost, 28 días)
-medio     = 1 − grueso − fino                  (8–25 mm → fibra prensa Bio-Macetas)
-```
-
-Salidas: kg de cada fracción, Bio-Macetas (210 por tonelada de fibra), horas de cuchilla (alerta a
-las 40 h), valor USD del lote (mulch $45/t, compost $120/t, Bio-Maceta $0.90) y flag
-`needsPreDrying` (humedad > 45 %).
-
-### Enrutamiento Haversine (`services/routing.service.ts`)
-
-1. Distancia _great-circle_ del origen a cada nodo y al vertedero La Chureca.
-2. Peso estimado = `volumen × 120 kg/m³`.
-3. Se descartan nodos `full` o con carga proyectada > 100 %.
-4. `score = distancia × (1 + carga/100)` → castiga nodos ya saturados.
-5. Ahorro de diésel = `(km_vertedero − km_nodo) × rendimiento × precio` (NIC $1.32/L).
-
-Fallback explícito: si ningún nodo tiene capacidad, sugiere el menos cargado y lo marca con
-`fallbackApplied = true`.
-
-### Telemetría (`services/telemetry.service.ts`)
-
-Calculada en TypeScript (no en SQL) para una sola fuente de verdad: toneladas de la semana/mes,
-camiones ahorrados (`toneladas ÷ 1.5 t`), Bio-Macetas, mulch/compost producido, CO₂ evitado, −6.5 °C
-de suelo, 50 % de ahorro de agua y ROI (`capexUsd $1,200`, `monthlyReturnUsd $1,140` → payback ≈
-1.05 meses).
-
----
-
-## Datos semilla (Managua)
-
-- **4 Bio-Nodos**: Las Madres (Distrito I), Luis Alfonso Velásquez, Plantel Noroeste Alcaldía y
-  Parque Japonés / Distrito I.
-- **5 vecinos**: `user-jose`, `user-operador-carmen`, `user-martha`, `user-marcos`, `user-alma`.
-- **4 insumos** de trueque: `item-abono-5kg`, `item-madero-negro`, `item-biomaceta`,
-  `item-mulch-10kg`.
-- Vale pendiente conocido: `BIORED-MADRES-4821`.
-
-El SQL semilla se **genera con el motor real** para que coincida con el modo memoria:
-
+**Verificar estado del servicio:**
 ```bash
-deno run --allow-read --allow-write scripts/generate-seed-sql.ts
+curl -s http://localhost:3000/api/v1/health | jq .
 ```
 
----
-
-## Estructura
-
-```
-supabase/
-  config.toml                     # project_id + verify_jwt = false
-  migrations/                     # init, rpc, seed, grants
-  functions/
-    api/index.ts                  # entry de la Edge Function
-    _shared/
-      app.ts  routes/  controllers/  schemas/  serializers/
-      services/                   # routing, uct3, qrcode, telemetry
-      data/                       # types, seed, repo (port), memory.repo, postgres.repo
-      lib/                        # errores de dominio
-      middlewares/                # error handler + CORS
-src/
-  server.ts                       # servidor local (`npm run dev`)
-  api-client.ts                   # cliente tipado para la app Expo
-scripts/
-  generate-seed-sql.ts            # regenera la migración semilla
-```
-
----
-
-## Scripts
-
+**Consultar recomendación de Bio-Nodo óptimo:**
 ```bash
-npm run dev          # servidor local (memoria o Postgres según .env)
-npm run typecheck    # deno check
-npm run fmt          # deno fmt
-npm test             # deno test
-npm run db:push      # supabase db push
-npm run db:reset     # supabase db reset
-npm run fn:deploy    # supabase functions deploy api
-npm run fn:serve     # supabase functions serve api --env-file .env
+curl -s -X POST http://localhost:3000/api/v1/nodes/recommend \
+  -H "Content-Type: application/json" \
+  -d '{"latitude": 12.1360, "longitude": -86.2710, "volumeM3": 0.8}' | jq .
+```
+
+**Consultar Bio-Nodos registrados:**
+```bash
+curl -s http://localhost:3000/api/v1/nodes | jq .
 ```
 
 ---
 
-## Seguridad
+## 📲 Conexión con la App Móvil (`RallyApp`)
 
-- La app móvil **nunca** escribe directo a Postgres: todo pasa por la Edge Function.
-- Las RPC sensibles revocan `execute` a `anon`/`authenticated`; sólo `service_role`.
-- RLS habilitado; lectura pública de catálogos vía políticas `*_read_all`.
-- El filtro de búsqueda de vales se **sanea** (`sanitizeLookup`) antes de entrar al filtro
-  `.or(...)` de PostgREST, evitando inyección de filtros.
-- **Trade-off demo:** `verify_jwt = false`. Para producción, cámbialo a `true` en
-  `supabase/config.toml` y despliega; la app ya envía `Authorization: Bearer <anon key>`.
+El frontend móvil en Expo está configurado para consumir los datos directamente desde la nube de Supabase:
+
+* **Endpoint Base:** `https://thlizppibkntlrpyhrmn.supabase.co/rest/v1`
+* **Autenticación PostgREST:** Header `apikey: EXPO_PUBLIC_SUPABASE_ANON_KEY`
+* **Resiliencia Offline:** En caso de corte de señal en campo, la app conmuta automáticamente a los modelos locales sin interrumpir la experiencia de usuario.
 
 ---
 
-## Conexión con la app Expo (`RallyApp`)
+## 👥 Equipo y Créditos
 
-1. Levanta el backend (`npm run dev`) o despliega la Edge Function.
-2. Define en `RallyApp/.env`:
-
-   ```env
-   EXPO_PUBLIC_BIORED_API_URL=http://<IP-LAN>:3000/api/v1
-   # o en producción:
-   # EXPO_PUBLIC_BIORED_API_URL=https://<ref>.supabase.co/functions/v1/api/api/v1
-   ```
-
-3. La app consume la API en `src/services/`; si la API no responde, cae de vuelta a los mocks
-   locales (`constants/nodesData.ts`) para que el demo nunca se vea vacío.
+Proyecto desarrollado para el **Rally Latinoamericano de Innovación 2026** por el equipo de innovación ambiental y desarrollo tecnológico de Managua, Nicaragua.
